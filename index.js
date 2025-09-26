@@ -5,48 +5,51 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- Menu ---
+// --- MENU DEMO ---
 const MENU = [
   { id: "m1", name: "Margherita", price: 8.5, category: "Pizzas" },
-  { id: "m2", name: "Regina", price: 10.0, category: "Pizzas" },
+  { id: "m2", name: "Regina",     price: 10.0, category: "Pizzas" },
   { id: "m3", name: "Cheeseburger", price: 12.0, category: "Burgers" },
-  { id: "m4", name: "Frites", price: 3.5, category: "Sides" },
-  { id: "m5", name: "Tiramisu", price: 5.0, category: "Desserts" },
-  { id: "m6", name: "Coca 33cl", price: 2.8, category: "Boissons" }
+  { id: "m4", name: "Frites",     price: 3.5, category: "Sides" },
+  { id: "m5", name: "Tiramisu",   price: 5.0, category: "Desserts" },
+  { id: "m6", name: "Coca 33cl",  price: 2.8, category: "Boissons" }
 ];
 
-const TABLES = ["T1", "T2", "T3", "T4", "T5"];
+const TABLES = ["T1","T2","T3","T4","T5"];
 
-// --- État mémoire ---
-let ORDERS = [];
+// --- ÉTAT EN MÉMOIRE ---
+let ORDERS = []; // { id, table, location, items[{id,name,price,qty}], total, status, ts }
 
-// --- Endpoints ---
-app.get('/health', (req, res) => res.json({ ok: true }));
+// --- HEALTH ---
+app.get("/health", (req,res) => res.json({ ok: true }));
 
-app.get('/MENU', (req, res) => res.json({ ok: true, data: MENU }));
+// --- PUBLIC ---
+app.get("/MENU", (req,res) => res.json({ ok: true, data: MENU }));
 
-app.get('/tables', (req, res) => {
+app.get("/tables", (req,res) => {
   const data = TABLES.map(t => {
+    const pendingCount = ORDERS.filter(o => o.table === t && o.status === "pending").length;
     const last = ORDERS.filter(o => o.table === t).slice(-1)[0] || null;
-    return { id: t, pending: ORDERS.filter(o => o.table === t && o.status === "pending").length, lastTicket: last };
+    return { id: t, pending: pendingCount, lastTicket: last };
   });
   res.json({ ok: true, data });
 });
 
-// --- Commandes ---
-app.get('/orders', (req, res) => res.json({ ok: true, data: ORDERS }));
+// --- COMMANDES ---
+app.get("/orders", (req,res) => res.json({ ok: true, data: ORDERS }));
 
-app.post('/orders', (req, res) => {
+app.post("/orders", (req,res) => {
   const { table, location, items } = req.body || {};
-  if (!table || !items?.length) {
-    return res.status(400).json({ ok: false, error: "Bad payload" });
+  if (!table || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ ok: false, error: "bad payload" });
   }
+  const total = items.reduce((sum, it) => sum + Number(it.price || 0) * Number(it.qty || 0), 0);
   const order = {
     id: "o" + (ORDERS.length + 1),
     table,
     location: location || null,
     items,
-    total: items.reduce((s, it) => s + it.price * it.qty, 0),
+    total,
     status: "pending",
     ts: Date.now()
   };
@@ -54,24 +57,30 @@ app.post('/orders', (req, res) => {
   res.json({ ok: true, order });
 });
 
-app.patch('/orders/:id/pay', (req, res) => {
+app.patch("/orders/:id/pay", (req,res) => {
   const o = ORDERS.find(x => x.id === req.params.id);
-  if (!o) return res.status(404).json({ ok: false, error: "Not found" });
+  if (!o) return res.status(404).json({ ok: false, error: "not found" });
   o.status = "paid";
   res.json({ ok: true });
 });
 
-// --- Résumé staff ---
-app.get('/staff/summary', (req, res) => {
-  const summary = ORDERS.map(o => ({
-    table: o.table,
-    items: o.items,
-    total: o.total,
-    status: o.status,
-    ts: o.ts
-  }));
-  res.json({ ok: true, tickets: summary });
+// --- STAFF SUMMARY ---
+app.get("/staff/summary", (req,res) => {
+  try {
+    const tickets = ORDERS.map(o => ({
+      table: o.table,
+      items: o.items,
+      total: o.total,
+      status: o.status,
+      ts: o.ts
+    }));
+    res.json({ ok: true, tickets });
+  } catch (e) {
+    console.error("summary error", e);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
 });
 
-// --- Serveur ---
-app.listen(4000, () => console.log("API v1.1 listening on 4000"));
+// --- SERVER ---
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => console.log(`API listening on ${PORT}`));
